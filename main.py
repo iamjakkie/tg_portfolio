@@ -14,7 +14,7 @@ async def check(wallet):
             await wallet.check_balance()
         except Exception as e:
             print(e)
-        await asyncio.sleep(5)
+        await asyncio.sleep(60)
 
 async def main():
     wallet = Wallet()

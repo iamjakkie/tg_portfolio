@@ -16,9 +16,7 @@ class Wallet:
     
     async def _price_assets(self):
         for asset in self.asset_holdings:
-            print(asset)
             if asset in self._pricer.assets:
-                print(f'{asset} in assets')
                 price = await self._pricer.get_price(asset)
                 self.asset_holdings[asset]['usd_value'] = price * self.asset_holdings[asset]['amount']
 
@@ -40,10 +38,10 @@ class Wallet:
                     source = balance.source
                     self.asset_holdings[asset]['balances'][source] = balance
                     self.asset_holdings[asset]['amount'] += balance.amount
-        print(self.asset_holdings.keys())
-        # print(self._pricer.assets)
-        # await self._price_assets()
-        # print('priced')
-        # self.last_update = datetime.now()
-        # for asset, data in self.asset_holdings.items():
-        #     print(f"{asset}: {data['usd_value']}")
+        await self._price_assets()
+        self.last_update = datetime.now()
+        total_usd = 0
+        for asset, data in self.asset_holdings.items():
+            print(f"{asset}: {data['usd_value']}")
+            total_usd += data['usd_value']
+        print(f"Total USD: {total_usd}")
