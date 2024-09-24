@@ -123,7 +123,36 @@ class EVMCLient:
     def __init__(self, wallet):
         self.blockchains = ['eth-mainnet', 'opt-mainnet', 'polygon-mainnet',
                             'arb-mainnet', 'base-mainnet', 'avax-mainnet']
+        self.headers = {
+                "accept": "application/json",
+                "content-type": "application/json"
+            }
         self.wallet = wallet 
+
+    async def __aenter__(self):
+        self.client = aiohttp.ClientSession(headers=self.headers)
+        return self.client
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.client:
+            await self.client.close()
+
+    async def map_contract(self, blockchain, contract):
+        url = f'https://{blockchain}.g.alchemy.com/v2/{os.getenv("ALCHEMY_API_KEY")}'
+
+        payload = {
+            "id": 1,
+            "jsonrpc": "2.0",
+            "method": "alchemy_getTokenMetadata",
+            "params": [contract]
+        }
+
+        response = await self.client.post(url, json=payload)
+        response = await response.json()
+        token_data = response.get('result')
+        decimals = token_data.get('decimals')
+        symbol = token_data.get('symbol')
+        return symbol, decimals
     
     async def fetch_balances(self):
         for blockchain in self.blockchains:
@@ -135,15 +164,21 @@ class EVMCLient:
                 "method": "alchemy_getTokenBalances",
                 "params": [self.wallet]
             }
-            headers = {
-                "accept": "application/json",
-                "content-type": "application/json"
-            }
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload, headers=headers) as response:
-                    response = await response.json()
-                    balances = response.get('result')
-                    return balances
+            
+            response = await self.client.post(url, json=payload)
+            response = await response.json()
+            balances = response.get('result')
+            token_balances = balances.get('tokenBalances')
+            final_balances = []
+            for token in token_balances:
+                contract_address = token['contractAddress']
+                balance = token['tokenBalance']
+                token_balance_int = int(balance[2:], 16)
+                token_symbol, decimals = await self.map_contract(blockchain, contract_address)
+                token_balance = token_balance_int / 10 ** decimals
+                print(f"{contract_address}, {token_symbol}: {token_balance}")
+                final_balances.append(Balance(source=blockchain, asset=token_symbol, amount=token_balance))
+            return final_balances
         
 class CoingeckoClient:
     def __init__(self):
@@ -175,7 +210,7 @@ class CoingeckoClient:
                 response = await response.json()
                 self.assets = {asset['symbol'].upper(): asset['id'] for asset in response}
         self.assets.update(self.main_assets)
-        
+
     async def get_price(self, asset):
         if asset in self.fiats or asset in self.usd_pegged_stables:
             return 1
@@ -187,5 +222,5 @@ class CoingeckoClient:
                 response = await response.json()
                 return response[self.assets[asset]]['usd']
     
-# clients = [EVMCLient('0xa49D6B59ccC2c1544a9DeAAC77A0ecF77907ef86')]
-clients = [BinanceClient(), GateioClient(), CoinbaseClient()]
+clients = [EVMCLient('0xa49D6B59ccC2c1544a9DeAAC77A0ecF77907ef86')]
+# clients = [BinanceClient(), GateioClient(), CoinbaseClient(), EVMCLient('0xa49D6B59ccC2c1544a9DeAAC77A0ecF77907ef86')]
