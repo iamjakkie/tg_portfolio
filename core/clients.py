@@ -26,6 +26,7 @@ class Balance:
     asset: str
     amount: float
     usd_value: float = 0.0
+    contract: str = None
 
 
 class BinanceClient:
@@ -156,6 +157,7 @@ class EVMCLient:
     
     async def fetch_balances(self):
         for blockchain in self.blockchains:
+            print(blockchain)
             url = f'https://{blockchain}.g.alchemy.com/v2/{os.getenv("ALCHEMY_API_KEY")}'
 
             payload = {
@@ -177,7 +179,7 @@ class EVMCLient:
                 token_symbol, decimals = await self.map_contract(blockchain, contract_address)
                 token_balance = token_balance_int / 10 ** decimals
                 print(f"{contract_address}, {token_symbol}: {token_balance}")
-                final_balances.append(Balance(source=blockchain, asset=token_symbol, amount=token_balance))
+                final_balances.append(Balance(source=blockchain, asset=token_symbol, amount=token_balance, contract=contract_address))
             return final_balances
         
 class CoingeckoClient:
@@ -186,6 +188,14 @@ class CoingeckoClient:
         self._headers = {
             "accept": "application/json",
             "x-cg-pro-api-key": os.getenv("COINGECKO_API_KEY")
+        }
+        self.platform_mapping = {
+            'eth-mainnet': 'eth',
+            'opt-mainnet': 'optimism',
+            'polygon-mainnet': 'polygon-pos',
+            'arb-mainnet': 'arbitrum',
+            'base-mainnet': 'base',
+            'avax-mainnet': 'avalanche'
         }
         self.fiats = ['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'KRW']
         self.usd_pegged_stables = ['USDT', 'USDC', 'FDUSD']
@@ -211,16 +221,29 @@ class CoingeckoClient:
                 self.assets = {asset['symbol'].upper(): asset['id'] for asset in response}
         self.assets.update(self.main_assets)
 
-    async def get_price(self, asset):
+    async def get_price(self, asset, balances, on_chain):
         if asset in self.fiats or asset in self.usd_pegged_stables:
             return 1
         if not self.assets:
             await self.refresh_all_assets()
-        url = f"{self._base_url}/simple/price?ids={self.assets[asset]}&vs_currencies=usd"
-        async with aiohttp.ClientSession(headers=self._headers) as session:
-            async with session.get(url) as response:
-                response = await response.json()
-                return response[self.assets[asset]]['usd']
+        if on_chain:
+            for source, balance in balances.items():
+                if balance.contract:
+                    # url = f"{self._base_url}/coins/{self.platform_mapping[source]}/contract/{balance.contract}"
+                    url = f"{self._base_url}/onchain/networks/{self.platform_mapping[source]}/tokens/{balance.contract}"
+                    async with aiohttp.ClientSession(headers=self._headers) as session:
+                        async with session.get(url) as response:
+                            response = await response.json()
+                            data = response.get('data', {})
+                            attributes = data.get('attributes', {})
+                            price = attributes.get('price_usd', 0)
+                            return price if price is not None else 0.0
+        else:      
+            url = f"{self._base_url}/simple/price?ids={self.assets[asset]}&vs_currencies=usd"
+            async with aiohttp.ClientSession(headers=self._headers) as session:
+                async with session.get(url) as response:
+                    response = await response.json()
+                    return response[self.assets[asset]]['usd']
     
 clients = [EVMCLient('0xa49D6B59ccC2c1544a9DeAAC77A0ecF77907ef86')]
 # clients = [BinanceClient(), GateioClient(), CoinbaseClient(), EVMCLient('0xa49D6B59ccC2c1544a9DeAAC77A0ecF77907ef86')]

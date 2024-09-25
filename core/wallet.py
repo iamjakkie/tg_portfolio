@@ -15,10 +15,13 @@ class Wallet:
         return self.asset_holdings
     
     async def _price_assets(self):
-        for asset in self.asset_holdings:
-            if asset in self._pricer.assets:
-                price = await self._pricer.get_price(asset)
-                self.asset_holdings[asset]['usd_value'] = price * self.asset_holdings[asset]['amount']
+        for asset, data in self.asset_holdings.items():
+            balances = data['balances']
+            on_chain = data['on_chain']
+            price = await self._pricer.get_price(asset, balances, on_chain)
+            # if asset in self._pricer.assets:
+            #     price = await self._pricer.get_price(asset)
+            self.asset_holdings[asset]['usd_value'] = price * self.asset_holdings[asset]['amount']
 
     async def _fetch_balance(self):
         # TODO: improve speed, process in parallel
@@ -33,11 +36,14 @@ class Wallet:
                         self.asset_holdings[asset] = {
                             'amount': 0,
                             'usd_value': 0,
-                            'balances': {}
+                            'balances': {},
+                            'on_chain': False
                         }
                     source = balance.source
                     self.asset_holdings[asset]['balances'][source] = balance
                     self.asset_holdings[asset]['amount'] += balance.amount
+                    if balance.contract:
+                        self.asset_holdings[asset]['on_chain'] = True
         await self._price_assets()
         self.last_update = datetime.now()
         total_usd = 0
